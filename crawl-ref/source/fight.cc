@@ -851,20 +851,10 @@ bool player_unrand_bad_attempt(const item_def &weapon,
                                const actor *defender,
                                bool check_only)
 {
-    if (is_unrandom_artefact(weapon, UNRAND_DEVASTATOR))
-    {
+    const monster* defending_monster = defender ? defender->as_monster() :
+        nullptr;
 
-        targeter_smite hitfunc(&you, 1, 1, 1, false);
-        hitfunc.set_aim(defender->pos());
-
-        return stop_attack_prompt(hitfunc, "attack",
-                                  [](const actor *act)
-                                  {
-                                      return !god_protects(act->as_monster());
-                                  }, nullptr, defender->as_monster(),
-                                  check_only);
-    }
-    else if (is_unrandom_artefact(weapon, UNRAND_VARIABILITY)
+    if (is_unrandom_artefact(weapon, UNRAND_VARIABILITY)
              || is_unrandom_artefact(weapon, UNRAND_SINGING_SWORD)
                 && !silenced(you.pos()))
     {
@@ -874,7 +864,7 @@ bool player_unrand_bad_attempt(const item_def &weapon,
                                [](const actor *act)
                                {
                                    return !god_protects(act->as_monster());
-                               }, nullptr, defender->as_monster(),
+                               }, nullptr, defending_monster,
                                check_only);
     }
     if (is_unrandom_artefact(weapon, UNRAND_TORMENT))
@@ -887,28 +877,71 @@ bool player_unrand_bad_attempt(const item_def &weapon,
                                    return !m->res_torment()
                                        && !god_protects(m->as_monster());
                                },
-                                  nullptr, defender->as_monster(),
+                                  nullptr, defending_monster,
                                 check_only);
+    }
+
+    if (!defender)
+        return false;
+
+    return player_unrand_bad_target(weapon, *defender, check_only);
+}
+
+bool player_unrand_bad_attempt(const item_def *weapon,
+    const item_def *offhand,
+    const actor *defender,
+    bool check_only)
+{
+    return weapon && ::player_unrand_bad_attempt(*weapon, defender, check_only)
+        || offhand && ::player_unrand_bad_attempt(*offhand, defender, check_only);
+}
+
+bool player_unrand_bad_target(const item_def &weapon,
+    const actor &defender,
+    bool check_only)
+{
+    const monster* defending_monster = defender.as_monster();
+
+    if (is_unrandom_artefact(weapon, UNRAND_DEVASTATOR))
+    {
+        targeter_smite hitfunc(&you, 1, 1, 1, false);
+        hitfunc.set_aim(defender.pos());
+
+        return stop_attack_prompt(hitfunc, "attack",
+            [](const actor *act)
+        {
+            return !god_protects(act->as_monster());
+        }, nullptr, defending_monster,
+            check_only);
     }
     if (is_unrandom_artefact(weapon, UNRAND_ARC_BLADE))
     {
         vector<const actor *> exclude;
-        return !safe_discharge(defender->pos(), exclude, check_only);
+        return !safe_discharge(defender.pos(), exclude, check_only);
     }
     if (is_unrandom_artefact(weapon, UNRAND_POWER))
     {
         targeter_beam hitfunc(&you, 4, ZAP_SWORD_BEAM, 100, 0, 0);
         hitfunc.beam.aimed_at_spot = false;
-        hitfunc.set_aim(defender->pos());
+        hitfunc.set_aim(defender.pos());
 
         return stop_attack_prompt(hitfunc, "attack",
-                               [](const actor *act)
-                               {
-                                   return !god_protects(act->as_monster());
-                               }, nullptr, defender->as_monster(),
-                               check_only);
+            [](const actor *act)
+        {
+            return !god_protects(act->as_monster());
+        }, nullptr, defending_monster,
+            check_only);
     }
     return false;
+}
+
+bool player_unrand_bad_target(const item_def *weapon,
+    const item_def *offhand,
+    const actor &defender,
+    bool check_only)
+{
+    return weapon && ::player_unrand_bad_target(*weapon, defender, check_only)
+        || offhand && ::player_unrand_bad_target(*offhand, defender, check_only);
 }
 
 /**
