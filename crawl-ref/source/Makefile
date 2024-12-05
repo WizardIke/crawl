@@ -559,7 +559,7 @@ ifdef USE_ICC
   CFOPTIMIZE := -O2 -parallel
 else
 
-  ifneq (,$(shell $(GXX) --version|grep 'g++.*4\.2\.'))
+  ifneq (,$(shell $(GXX) --version|grep 'g++.*4\.2\.'|grep -v '[0-9]\+4\.2\.'))
     # OS X uses a buggy ancient version of gcc without fixes from even
     # subsequent point releases of 4.2.
     CFOPTIMIZE := -O0
