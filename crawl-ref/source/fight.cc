@@ -480,6 +480,9 @@ bool fight_melee(actor *attacker, actor *defender, bool *did_hit, bool simu)
         if (you.duration[DUR_EXECUTION])
             you.duration[DUR_EXECUTION] += you.time_taken;
 
+        if (you.duration[DUR_DETONATION_CATALYST])
+            you.duration[DUR_DETONATION_CATALYST] += you.time_taken;
+
         if (you.duration[DUR_PARAGON_ACTIVE])
             paragon_attack_trigger();
 
@@ -509,6 +512,8 @@ bool fight_melee(actor *attacker, actor *defender, bool *did_hit, bool simu)
     // Melee combat, tell attacker to wield its melee weapon.
     attacker->as_monster()->wield_melee_weapon();
 
+    bool was_hostile = !mons_aligned(attacker, defender);
+
     int effective_attack_number = 0;
     int attack_number;
     for (attack_number = 0; attack_number < nrounds && attacker->alive();
@@ -517,10 +522,13 @@ bool fight_melee(actor *attacker, actor *defender, bool *did_hit, bool simu)
         if (!attacker->alive())
             return false;
 
-        // Monster went away?
+        // Monster went away or become friendly?
         if (!defender->alive()
             || defender->pos() != pos
-            || defender->is_banished())
+            || defender->is_banished()
+            || was_hostile && mons_aligned(attacker, defender)
+               && !mons_is_confused(*attacker->as_monster())
+               && !attacker->as_monster()->has_ench(ENCH_FRENZIED))
         {
             if (attacker == defender
                || !attacker->as_monster()->has_multitargeting())
@@ -539,6 +547,7 @@ bool fight_melee(actor *attacker, actor *defender, bool *did_hit, bool simu)
                     attacker->as_monster()->foe = MHITYOU;
                     attacker->as_monster()->target = you.pos();
                     defender = &you;
+                    was_hostile = true;
                     end = false;
                     break;
                 }
@@ -547,6 +556,7 @@ bool fight_melee(actor *attacker, actor *defender, bool *did_hit, bool simu)
                 if (mons && !mons_aligned(attacker, mons))
                 {
                     defender = mons;
+                    was_hostile = true;
                     end = false;
                     pos = mons->pos();
                     break;
@@ -1456,10 +1466,8 @@ bool stop_attack_prompt(targeter &hitfunc, const char* verb,
     if (you.confused() && !check_only)
         return false;
 
-    string adj, suffix;
-    bool penance = false;
+    attacked_monster_list victims;
     bool defender_ok = true;
-    counted_monster_list victims;
     for (distance_iterator di(hitfunc.origin, false, true, LOS_RADIUS); di; ++di)
     {
         if (hitfunc.is_affected(*di) <= AFF_NO)
@@ -1472,16 +1480,11 @@ bool stop_attack_prompt(targeter &hitfunc, const char* verb,
         if (affects && !affects(mon))
             continue;
 
-        string adjn, suffixn;
-        bool penancen = false;
-        if (bad_attack(mon, adjn, suffixn, penancen))
+        string adj, suffix;
+        bool penance = false;
+        if (bad_attack(mon, adj, suffix, penance))
         {
-            // record the adjectives for the first listed, or
-            // first that would cause penance
-            if (victims.empty() || penancen && !penance)
-                adj = adjn, suffix = suffixn, penance = penancen;
-
-            victims.add(mon);
+            victims.add(*mon, std::move(adj), std::move(suffix), penance);
 
             if (defender && defender == mon)
                 defender_ok = false;
@@ -1496,16 +1499,12 @@ bool stop_attack_prompt(targeter &hitfunc, const char* verb,
         return true;
 
     // Listed in the form: "your rat", "Blorkula the orcula".
-    string mon_name = victims.describe(DESC_PLAIN);
-    if (starts_with(mon_name, "the ")) // no "your the Royal Jelly" nor "the the RJ"
-        mon_name = mon_name.substr(4); // strlen("the ")
-    if (!starts_with(adj, "your"))
-        adj = "the " + adj;
-    mon_name = adj + mon_name;
+    string mon_name = victims.describe();
+    const bool penance = victims.penance();
 
     const string prompt = make_stringf("Really %s%s %s%s?%s",
              verb, defender_ok ? " near" : "", mon_name.c_str(),
-             suffix.c_str(),
+             victims.suffix(),
              penance ? " This attack would place you under penance!" : "");
 
     if (prompted)

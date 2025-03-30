@@ -670,6 +670,9 @@ bool melee_attack::handle_phase_hit()
         return false;
     }
 
+    // Detonation catalyst should trigger even if the defender dies later on.
+    maybe_trigger_detonation();
+
     // This does more than just calculate the damage, it also sets up
     // messages, etc. It also wakes nearby creatures on a failed stab,
     // meaning it could have made the attacked creature vanish. That
@@ -837,6 +840,18 @@ static void _inflict_deathly_blight(monster &m)
 
 bool melee_attack::handle_phase_damaged()
 {
+    if (defender->is_player() && you.get_mutation_level(MUT_SLIME_SHROUD)
+        && !you.duration[DUR_SHROUD_TIMEOUT] && one_chance_in(4))
+    {
+        you.duration[DUR_SHROUD_TIMEOUT] = 100 + random2(damage_done) * 10;
+        mprf("your slimy shroud breaks as it bends %s attack away%s",
+                     atk_name(DESC_ITS).c_str(),
+                     attack_strength_punctuation(damage_done).c_str());
+        did_hit = false;
+        damage_done = 0;
+        return false;
+    }
+
     if (!attack::handle_phase_damaged())
         return false;
 
@@ -1491,6 +1506,16 @@ bool melee_attack::check_unrand_effects()
     }
 
     return false;
+}
+
+void melee_attack::maybe_trigger_detonation()
+{
+    if (attacker->is_player()
+                       && you.duration[DUR_DETONATION_CATALYST]
+                       && !cleaving && in_bounds(defender->pos()))
+        {
+            detonation_fineff::schedule(defender->pos(), weapon);
+        }
 }
 
 class AuxAttackType
