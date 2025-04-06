@@ -1,9 +1,224 @@
 #pragma once
 
+#include <cstdint>
+#include <vector>
+
 #include "coord.h"
-#include "enum.h"
-#include "feature.h"
-#include "externs.h"
+#include "coord-def.h"
+#include "defines.h"
+#include "fixedarray.h"
+#include "item-def.h"
+#include "killer-type.h"
+#include "map-feature.h"
+#include "mon-info.h"
+#include "trap-type.h"
+
+#define MAP_MAGIC_MAPPED_FLAG   0x01
+#define MAP_SEEN_FLAG           0x02
+#define MAP_CHANGED_FLAG        0x04 // FIXME: this doesn't belong here
+#define MAP_DETECTED_MONSTER    0x08
+#define MAP_INVISIBLE_MONSTER   0x10
+#define MAP_DETECTED_ITEM       0x20
+#define MAP_VISIBLE_FLAG        0x40
+#define MAP_GRID_KNOWN          0xFF
+
+#define MAP_EMPHASIZE          0x100
+#define MAP_MORE_ITEMS         0x200
+#define MAP_HALOED             0x400
+#define MAP_SILENCED           0x800
+#define MAP_BLOODY            0x1000
+#define MAP_CORRODING         0x2000
+#define MAP_INVISIBLE_UPDATE  0x4000 // Used for invis redraws by show_init()
+#define MAP_ICY               0x8000
+
+/* these flags require more space to serialize: put infrequently used ones there */
+#define MAP_EXCLUDED_STAIRS  0x10000
+#define MAP_SANCTUARY_1      0x80000
+#define MAP_SANCTUARY_2     0x100000
+#define MAP_WITHHELD        0x200000
+#define MAP_LIQUEFIED       0x400000
+#define MAP_ORB_HALOED      0x800000
+#define MAP_UMBRAED        0x1000000
+#define MAP_QUAD_HALOED    0X4000000
+#define MAP_DISJUNCT       0X8000000
+#define MAP_BLASPHEMY     0X10000000
+#define MAP_BFB_CORPSE    0X20000000
+
+struct cloud_info
+{
+    cloud_info() : type(CLOUD_NONE), colour(0), duration(3), tile(0), pos(0, 0),
+        killer(KILL_NONE)
+    { }
+
+    cloud_info(cloud_type t, colour_t c,
+        uint8_t dur, unsigned short til, coord_def gc,
+        killer_type kill)
+        : type(t), colour(c), duration(dur), tile(til), pos(gc), killer(kill)
+    { }
+
+    friend bool operator==(const cloud_info &lhs, const cloud_info &rhs) {
+        return lhs.type == rhs.type
+            && lhs.colour == rhs.colour
+            && lhs.duration == rhs.duration
+            && lhs.tile == rhs.tile
+            && lhs.pos == rhs.pos
+            && lhs.killer == rhs.killer;
+    }
+
+    friend bool operator!=(const cloud_info &lhs, const cloud_info &rhs) {
+        return !(lhs == rhs);
+    }
+
+
+    cloud_type type : 8;
+    colour_t colour;
+    uint8_t duration; // decay/20, clamped to 0-3
+    union
+    {
+        // TODO: should this be tileidx_t?
+        unsigned short tile;
+        uint16_t next_free;
+    };
+    coord_def pos;
+    killer_type killer;
+};
+
+class MapKnowledge
+{
+public:
+    MapKnowledge() = default;
+    MapKnowledge(const MapKnowledge&);
+    MapKnowledge(MapKnowledge&&) noexcept = default;
+
+    MapKnowledge& operator=(const MapKnowledge&);
+    MapKnowledge& operator=(MapKnowledge&&) noexcept = default;
+
+    const item_def* item(coord_def pos) const;
+    item_def* item(coord_def pos);
+    bool detected_item(coord_def pos) const;
+
+    void set_item(coord_def pos, const item_def& ii, bool more_items);
+    void set_item(const item_def& ii, bool more_items)
+    {
+        set_item(ii.pos, ii, more_items);
+    }
+
+    void set_detected_item(coord_def pos);
+
+    void clear_item(coord_def pos);
+
+    monster_type monster(coord_def pos) const;
+    const monster_info* monsterinfo(coord_def pos) const;
+    monster_info* monsterinfo(coord_def pos);
+    bool detected_monster(coord_def pos) const;
+    bool invisible_monster(coord_def pos) const;
+
+    void set_monster(coord_def pos, const monster_info& mi);
+    void set_monster(const monster_info& mi)
+    {
+        set_monster(mi.pos, mi);
+    }
+    void set_detected_monster(coord_def pos, monster_type mons);
+    void set_invisible_monster(coord_def pos);
+
+    void clear_monster(coord_def pos);
+
+    cloud_type cloud(coord_def pos) const;
+    // TODO: should this be colour_t?
+    unsigned cloud_colour(coord_def pos) const;
+    const cloud_info* cloudinfo(coord_def pos) const;
+    cloud_info* cloudinfo(coord_def pos);
+
+    void set_cloud(coord_def pos, const cloud_info& ci);
+    void set_cloud(const cloud_info& ci)
+    {
+        set_cloud(ci.pos, ci);
+    }
+
+    void clear_cloud(coord_def pos);
+
+    uint32_t flags(coord_def pos) const;
+    uint32_t& flags(coord_def pos);
+
+    bool changed(coord_def pos) const;
+    bool known(coord_def pos) const;
+    bool visible(coord_def pos) const;
+    bool seen(coord_def pos) const;
+    bool mapped(coord_def pos) const;
+
+    dungeon_feature_type feat(coord_def pos) const;
+    unsigned feat_colour(coord_def pos) const;
+    void set_feature(coord_def pos, dungeon_feature_type nfeat,
+                     unsigned colour = 0, trap_type tr = TRAP_UNASSIGNED);
+
+    trap_type trap(coord_def pos) const;
+
+    bool update_cloud_state(coord_def pos);
+
+    void clear(coord_def pos);
+
+    // Clear prior to show update. Need to retain at least "seen" flag.
+    void clear_data(coord_def pos);
+
+    void copy_at(coord_def pos, const MapKnowledge& other,
+                 coord_def other_pos);
+
+    map_feature get_map_feature(coord_def pos) const;
+
+    int size() const
+    {
+        return m_cells.size();
+    }
+
+    void reset();
+private:
+    void reset_for_overwrite();
+    void copy_from(const MapKnowledge& other);
+
+    struct map_cell
+    {
+        map_cell() noexcept
+        {
+        }
+
+        ~map_cell() = default;
+
+        // copy constructor
+        map_cell(const map_cell& o) noexcept = default;
+
+        // copy assignment
+        map_cell& operator=(const map_cell& o) noexcept = default;
+
+        dungeon_feature_type feat() const
+        {
+            return static_cast<dungeon_feature_type>(_feat);
+        }
+
+        trap_type trap() const
+        {
+            return static_cast<trap_type>(_trap);
+        }
+
+        // Maybe shrink/re-order cloud_info and inline it?
+        uint32_t flags = 0;   // Flags describing the mappedness of this square.
+        uint16_t _cloud_index = UINT16_MAX;
+        uint16_t _item_index = UINT16_MAX;
+        uint16_t _mons_index = UINT16_MAX;
+        COMPILE_CHECK(NUM_FEATURES <= 256);
+        uint8_t _feat = (uint8_t)DNGN_UNSEEN;
+        colour_t _feat_colour = 0;
+        COMPILE_CHECK(NUM_TRAPS <= 256);
+        uint8_t _trap = (uint8_t)TRAP_UNASSIGNED;
+    };
+
+    FixedArray< map_cell, GXM, GYM > m_cells;
+    vector<cloud_info> m_clouds;
+    vector<item_def> m_items;
+    vector<monster_info> m_monsters;
+    uint16_t free_cloud_index = UINT16_MAX;
+    uint16_t free_item_index = UINT16_MAX;
+    uint16_t free_mons_index = UINT16_MAX;
+};
 
 void set_terrain_mapped(const coord_def c);
 void set_terrain_seen(const coord_def c);
@@ -38,7 +253,6 @@ void clear_map(bool clear_items = false, bool clear_mons = true);
 void clear_map_or_travel_trail();
 
 map_feature get_cell_map_feature(const coord_def& gc);
-map_feature get_cell_map_feature(const map_cell& cell);
 bool is_explore_horizon(const coord_def& c);
 
 void reautomap_level();
