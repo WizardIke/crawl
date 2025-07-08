@@ -324,8 +324,12 @@ protected:
     void _send_cursor(cursor_type type);
     void _send_map(bool force_full = false);
     void _send_cell(const coord_def &gc,
-                    const screen_cell_t &current_sc, const screen_cell_t &next_sc,
-                    const map_cell &current_mc, const map_cell &next_mc,
+                    const screen_cell_t &current_sc,
+                    const screen_cell_t &next_sc,
+                    const screen_cell_t &default_sc,
+                    const map_cell &current_mc,
+                    const map_cell &next_mc,
+                    const map_cell &default_mc,
                     map<uint32_t, coord_def>& new_monster_locs,
                     bool force_full);
     void _send_monster(const coord_def &gc, const monster_info* m,

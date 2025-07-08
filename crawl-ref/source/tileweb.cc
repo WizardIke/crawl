@@ -1532,13 +1532,23 @@ void TilesFramework::write_tileidx(tileidx_t t)
 }
 
 void TilesFramework::_send_cell(const coord_def &gc,
-                                const screen_cell_t &current_sc, const screen_cell_t &next_sc,
-                                const map_cell &current_mc, const map_cell &next_mc,
+                                const screen_cell_t &current_sc,
+                                const screen_cell_t &next_sc,
+                                const screen_cell_t &default_sc,
+                                const map_cell &current_mc,
+                                const map_cell &next_mc,
+                                const map_cell &default_mc,
                                 map<uint32_t, coord_def>& new_monster_locs,
                                 bool force_full)
 {
-    if (current_mc.feat() != next_mc.feat())
+#define _sc_changed(member) (next_sc.member != current_sc.member \
+    || (force_full && next_sc.member != default_sc.member))
+
+    if (next_mc.feat() != current_mc.feat()
+        || (force_full && next_mc.feat() != default_mc.feat()))
+    {
         json_write_int("f", next_mc.feat());
+    }
 
     if (next_mc.monsterinfo())
         _send_monster(gc, next_mc.monsterinfo(), new_monster_locs, force_full);
@@ -1546,27 +1556,30 @@ void TilesFramework::_send_cell(const coord_def &gc,
         json_write_null("mon");
 
     map_feature mf = get_cell_map_feature(gc);
-    if (get_cell_map_feature(current_mc) != mf)
+    map_feature current_mf = get_cell_map_feature(current_mc);
+    if (mf != current_mf
+        || (force_full && mf != get_cell_map_feature(default_mc)))
+    {
         json_write_int("mf", mf);
+    }
 
     // Glyph and colour
-    char32_t glyph = next_sc.glyph;
-    if (current_sc.glyph != glyph)
+    if (_sc_changed(glyph))
     {
         char buf[5];
-        buf[wctoutf8(buf, glyph)] = 0;
+        buf[wctoutf8(buf, next_sc.glyph)] = 0;
         json_write_string("g", buf);
     }
-    if ((current_sc.colour != next_sc.colour
-         || current_sc.glyph == ' ') && glyph != ' ')
+    if ((_sc_changed(colour) || current_sc.glyph == ' ')
+        && next_sc.glyph != ' ')
     {
         int col = next_sc.colour;
         col = (_get_highlight(col) << 4) | macro_colour(col & 0xF);
         json_write_int("col", col);
     }
-    if (current_sc.flash_colour != next_sc.flash_colour)
+    if (_sc_changed(flash_colour))
         json_write_int("flc", next_sc.flash_colour);
-    if (current_sc.flash_alpha != next_sc.flash_alpha)
+    if (_sc_changed(flash_alpha))
         json_write_int("fla", next_sc.flash_alpha);
 
     json_open_object("t");
@@ -1578,12 +1591,10 @@ void TilesFramework::_send_cell(const coord_def &gc,
         const tileidx_t fg_idx = next_pc.fg & TILE_FLAG_MASK;
 
         const bool in_water = _in_water(next_pc);
-        bool fg_changed = false;
+        bool fg_changed = _sc_changed(tile.fg);
 
-        if (next_pc.fg != current_pc.fg)
+        if (fg_changed)
         {
-            fg_changed = true;
-
             json_write_name("fg");
             write_tileidx(next_pc.fg);
             if (get_tile_texture(fg_idx) == TEX_DEFAULT)
@@ -1607,72 +1618,71 @@ void TilesFramework::_send_cell(const coord_def &gc,
             }
         }
 
-        if (next_pc.bg != current_pc.bg)
+        if (_sc_changed(tile.bg))
         {
             json_write_name("bg");
             write_tileidx(next_pc.bg);
         }
 
-        if (next_pc.cloud != current_pc.cloud)
+        if (_sc_changed(tile.cloud))
         {
             json_write_name("cloud");
             write_tileidx(next_pc.cloud);
         }
 
-        if (next_pc.icons != current_pc.icons)
+        if (_sc_changed(tile.icons))
             json_write_icons(next_pc.icons);
 
         if (Options.show_blood) {
-            if (next_pc.is_bloody != current_pc.is_bloody)
+            if (_sc_changed(tile.is_bloody))
                 json_write_bool("bloody", next_pc.is_bloody);
 
-            if (next_pc.old_blood != current_pc.old_blood)
+            if (_sc_changed(tile.old_blood))
                 json_write_bool("old_blood", next_pc.old_blood);
         }
 
-        if (next_pc.is_silenced != current_pc.is_silenced)
+        if (_sc_changed(tile.is_silenced))
             json_write_bool("silenced", next_pc.is_silenced);
 
-        if (next_pc.halo != current_pc.halo)
+        if (_sc_changed(tile.halo))
             json_write_int("halo", next_pc.halo);
 
-        if (next_pc.is_highlighted_summoner
-            != current_pc.is_highlighted_summoner)
+        if (_sc_changed(tile.is_highlighted_summoner))
         {
             json_write_bool("highlighted_summoner",
                             next_pc.is_highlighted_summoner);
         }
 
-        if (next_pc.is_sanctuary != current_pc.is_sanctuary)
+        if (_sc_changed(tile.is_sanctuary))
             json_write_bool("sanctuary", next_pc.is_sanctuary);
-        if (next_pc.is_blasphemy != current_pc.is_blasphemy)
+        if (_sc_changed(tile.is_blasphemy))
             json_write_bool("blasphemy", next_pc.is_blasphemy);
 
-        if (next_pc.has_bfb_corpse != current_pc.has_bfb_corpse)
+        if (_sc_changed(tile.has_bfb_corpse))
             json_write_bool("has_bfb_corpse", next_pc.has_bfb_corpse);
 
-        if (next_pc.is_liquefied != current_pc.is_liquefied)
+        if (_sc_changed(tile.is_liquefied))
             json_write_bool("liquefied", next_pc.is_liquefied);
 
-        if (next_pc.orb_glow != current_pc.orb_glow)
+        if (_sc_changed(tile.orb_glow))
             json_write_int("orb_glow", next_pc.orb_glow);
 
-        if (next_pc.quad_glow != current_pc.quad_glow)
+        if (_sc_changed(tile.quad_glow))
             json_write_bool("quad_glow", next_pc.quad_glow);
 
-        if (next_pc.disjunct != current_pc.disjunct)
+        if (_sc_changed(tile.disjunct))
             json_write_bool("disjunct", next_pc.disjunct);
 
-        if (next_pc.mangrove_water != current_pc.mangrove_water)
+        if (_sc_changed(tile.mangrove_water))
             json_write_bool("mangrove_water", next_pc.mangrove_water);
 
-        if (next_pc.awakened_forest != current_pc.awakened_forest)
+        if (_sc_changed(tile.awakened_forest))
             json_write_bool("awakened_forest", next_pc.awakened_forest);
 
-        if (next_pc.blood_rotation != current_pc.blood_rotation)
+        if (_sc_changed(tile.blood_rotation))
             json_write_int("blood_rotation", next_pc.blood_rotation);
 
-        if (next_pc.travel_trail != current_pc.travel_trail)
+        if (_sc_changed(tile.travel_trail))
             json_write_int("travel_trail", next_pc.travel_trail);
 
         if (_needs_flavour(next_pc) &&
@@ -1764,7 +1774,7 @@ void TilesFramework::_send_cell(const coord_def &gc,
 
         bool overlays_changed = false;
 
-        if (next_pc.num_dngn_overlay != current_pc.num_dngn_overlay)
+        if (_sc_changed(tile.num_dngn_overlay))
             overlays_changed = true;
         else
         {
@@ -1787,6 +1797,8 @@ void TilesFramework::_send_cell(const coord_def &gc,
         }
     }
     json_close_object(true);
+
+#undef _sc_changed
 }
 
 void TilesFramework::_send_cursor(cursor_type type)
@@ -1913,15 +1925,15 @@ void TilesFramework::_send_map(bool force_full)
                 json_treat_as_empty();
             }
 
-            const screen_cell_t& sc = force_full ? default_cell
-                : m_current_view(gc);
-            const map_cell& mc = force_full ? default_map_cell
-                : m_current_map_knowledge(gc);
             _send_cell(gc,
-                       sc,
+                       m_current_view(gc),
                        m_next_view(gc),
-                       mc, env.map_knowledge(gc),
-                       new_monster_locs, force_full);
+                       default_cell,
+                       m_current_map_knowledge(gc),
+                       env.map_knowledge(gc),
+                       default_map_cell,
+                       new_monster_locs,
+                       force_full);
 
             if (!json_is_empty())
             {
@@ -1955,6 +1967,12 @@ void TilesFramework::_send_monster(const coord_def &gc, const monster_info* m,
                                    map<uint32_t, coord_def>& new_monster_locs,
                                    bool force_full)
 {
+    if (!m)
+    {
+        json_write_null("mon");
+        return;
+    }
+
     json_open_object("mon");
     if (m->client_id)
     {
