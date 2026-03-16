@@ -46,6 +46,7 @@ struct player_info
     bool wizard;
     bool explore;
     string species;
+    string species_display_name;
     string god;
     bool under_penance;
     int piety_rank;
